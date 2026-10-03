@@ -15,7 +15,7 @@ enum ExpressionEvaluator {
     ]
 
     static func evaluate(_ expression: String) throws -> Double {
-        var parser = Parser(Array(expression.lowercased()))
+        var parser = Parser(chars: Array(expression.lowercased()))
         let value = try parser.parseExpression()
         parser.skipWhitespace()
         if parser.peek() != nil {
