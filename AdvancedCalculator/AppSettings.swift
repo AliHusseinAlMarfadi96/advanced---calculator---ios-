@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import Foundation
 
@@ -12,6 +13,12 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 }
 
 final class AppSettings: ObservableObject {
+    /// Inclusive slider range. These are the AVSpeechUtterance rate bounds (0...1),
+    /// not a separate fraction that is scaled later.
+    static let minimumSpeechRate = Double(AVSpeechUtteranceMinimumSpeechRate)
+    static let maximumSpeechRate = Double(AVSpeechUtteranceMaximumSpeechRate)
+    static let defaultSpeechRate = Double(AVSpeechUtteranceDefaultSpeechRate)
+
     @Published var language: AppLanguage {
         didSet { defaults.set(language.rawValue, forKey: Key.language) }
     }
@@ -23,6 +30,16 @@ final class AppSettings: ObservableObject {
     }
     @Published var startBeep: Bool {
         didSet { defaults.set(startBeep, forKey: Key.startBeep) }
+    }
+    /// When true, pressing "=" speaks the calculated result. Default true.
+    @Published var speakResultAfterEquals: Bool {
+        didSet { defaults.set(speakResultAfterEquals, forKey: Key.speakResultAfterEquals) }
+    }
+    /// Stored AVSpeechUtterance rate (minimum...maximum, i.e. 0...1).
+    /// UserDefaults key `advancedCalculator.speechRate` holds this rate directly,
+    /// not a 0...1 fraction that still needs mapping.
+    @Published var speechRate: Double {
+        didSet { defaults.set(Self.clampSpeechRate(speechRate), forKey: Key.speechRate) }
     }
 
     private let defaults: UserDefaults
@@ -38,6 +55,16 @@ final class AppSettings: ObservableObject {
         keyboardSpeech = defaults.object(forKey: Key.keyboardSpeech) as? Bool ?? true
         assistantSpeech = defaults.object(forKey: Key.assistantSpeech) as? Bool ?? true
         startBeep = defaults.object(forKey: Key.startBeep) as? Bool ?? true
+        speakResultAfterEquals = defaults.object(forKey: Key.speakResultAfterEquals) as? Bool ?? true
+        if defaults.object(forKey: Key.speechRate) != nil {
+            speechRate = Self.clampSpeechRate(defaults.double(forKey: Key.speechRate))
+        } else {
+            speechRate = Self.defaultSpeechRate
+        }
+    }
+
+    static func clampSpeechRate(_ rate: Double) -> Double {
+        min(max(rate, minimumSpeechRate), maximumSpeechRate)
     }
 
     private enum Key {
@@ -45,5 +72,8 @@ final class AppSettings: ObservableObject {
         static let keyboardSpeech = "advancedCalculator.keyboardSpeech"
         static let assistantSpeech = "advancedCalculator.assistantSpeech"
         static let startBeep = "advancedCalculator.startBeep"
+        static let speakResultAfterEquals = "advancedCalculator.speakResultAfterEquals"
+        /// Double equal to the AVSpeechUtterance rate (min...max).
+        static let speechRate = "advancedCalculator.speechRate"
     }
 }

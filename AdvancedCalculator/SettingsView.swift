@@ -32,6 +32,24 @@ struct SettingsView: View {
                             Text(L10n.text("settings.startBeep", language: settings.language))
                         }
                         .accessibilityHint(L10n.text("settings.startBeep.hint", language: settings.language))
+
+                        Toggle(isOn: $settings.speakResultAfterEquals) {
+                            Text(L10n.text("settings.speakResult", language: settings.language))
+                        }
+                        .accessibilityHint(L10n.text("settings.speakResult.hint", language: settings.language))
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(L10n.text("settings.speechRate", language: settings.language))
+                                .font(.body)
+                                .accessibilityHidden(true)
+                            Slider(
+                                value: $settings.speechRate,
+                                in: AppSettings.minimumSpeechRate...AppSettings.maximumSpeechRate
+                            )
+                            .accessibilityLabel(L10n.text("settings.speechRate", language: settings.language))
+                            .accessibilityHint(L10n.text("settings.speechRate.hint", language: settings.language))
+                        }
+                        .accessibilityElement(children: .contain)
                     } header: {
                         Text(L10n.text("settings.section.speech", language: settings.language))
                     }

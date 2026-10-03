@@ -23,6 +23,10 @@
 "settings.assistantSpeech.hint" = "عند الإيقاف تبقى النصوص ظاهرة دون نطق.";
 "settings.startBeep" = "صوت البداية";
 "settings.startBeep.hint" = "يشغّل نغمة قصيرة عندما يبدأ المساعد الاستماع.";
+"settings.speakResult" = "نطق الصوت بعد كلمة يساوي";
+"settings.speakResult.hint" = "ينطق الناتج النهائي عند الضغط على يساوي.";
+"settings.speechRate" = "سرعة النطق";
+"settings.speechRate.hint" = "يضبط سرعة كل العبارات المنطوقة.";
 "language.english" = "الإنجليزية";
 "language.arabic" = "العربية";
 "language.english.hint" = "يبدّل لغة التطبيق إلى الإنجليزية.";

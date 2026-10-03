@@ -37,8 +37,18 @@ struct KeypadView: View {
         let speech = L10n.text(key.speechKey, language: settings.language)
         let hint = key.hintKey.map { L10n.text($0, language: settings.language) }
         return Button {
-            speaker.speak(speech, languageCode: settings.language.speechLocale, enabled: settings.keyboardSpeech)
-            perform(key)
+            if key.special == .equals {
+                model.equals()
+                speakEqualsResult(buttonSpeech: speech)
+            } else {
+                speaker.speak(
+                    speech,
+                    languageCode: settings.language.speechLocale,
+                    enabled: settings.keyboardSpeech,
+                    rate: settings.speechRate
+                )
+                perform(key)
+            }
         } label: {
             Text(key.title)
                 .font(.title3.weight(.semibold))
@@ -52,6 +62,28 @@ struct KeypadView: View {
         .accessibilityLabel(label)
         .modifier(OptionalAccessibilityHint(hint: hint))
         .accessibilityAddTraits(.isButton)
+    }
+
+    private func speakEqualsResult(buttonSpeech: String) {
+        let succeeded = model.failure == nil && !model.resultText.isEmpty
+        if settings.speakResultAfterEquals && succeeded {
+            let sentence = L10n.text("voice.resultSpoken", language: settings.language)
+                .replacingOccurrences(of: "%@", with: model.resultText)
+            let phrase = settings.keyboardSpeech ? "\(buttonSpeech). \(sentence)" : sentence
+            speaker.speak(
+                phrase,
+                languageCode: settings.language.speechLocale,
+                enabled: true,
+                rate: settings.speechRate
+            )
+        } else {
+            speaker.speak(
+                buttonSpeech,
+                languageCode: settings.language.speechLocale,
+                enabled: settings.keyboardSpeech,
+                rate: settings.speechRate
+            )
+        }
     }
 
     private func perform(_ key: CalcKey) {

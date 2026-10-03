@@ -25,8 +25,11 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
     private var acceptingResults = false
     private var pendingEntry: HistoryEntry?
     private var retryItem: DispatchWorkItem?
+    private var settleItem: DispatchWorkItem?
     private var speechCompletion: (() -> Void)?
     private var speechKind: SpeechKind = .none
+    /// False until this listening session receives new text, so Pause/Resume does not re-evaluate the kept transcript.
+    private var transcriptReadyForEval = false
 
     private enum SpeechKind {
         case none
@@ -72,8 +75,10 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         generation += 1
         callbackID += 1
         retryItem?.cancel()
+        settleItem?.cancel()
         synthesizer.stopSpeaking(at: .immediate)
         stopEngine()
+        transcriptReadyForEval = false
         transcript = ""
         expressionText = ""
         resultText = ""
@@ -98,6 +103,7 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         generation += 1
         callbackID += 1
         retryItem?.cancel()
+        settleItem?.cancel()
         synthesizer.stopSpeaking(at: .immediate)
         stopEngine()
         isPaused = true
@@ -107,6 +113,35 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
 
     func saveTapped() {
         guard let settings else { return }
+        let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let visibleExpression = expressionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = !spoken.isEmpty ? spoken : visibleExpression
+        if !text.isEmpty {
+            switch SpeechMathParser.interpret(text) {
+            case let .success(expression, value):
+                let formatted = ExpressionEvaluator.format(value)
+                expressionText = expression
+                resultText = formatted
+                canSave = true
+                pendingEntry = HistoryEntry(id: UUID(), expression: expression, result: formatted, createdAt: Date())
+                showingExactError = false
+            case .notUnderstood:
+                canSave = false
+                pendingEntry = nil
+                presentNotUnderstood(resumeListening: !isPaused)
+                return
+            case let .mathError(failure):
+                canSave = false
+                pendingEntry = nil
+                showingExactError = false
+                let message = L10n.failure(failure, language: settings.language)
+                statusText = message
+                if settings.assistantSpeech {
+                    speak(message, languageCode: settings.language.speechLocale, kind: .other) { }
+                }
+                return
+            }
+        }
         guard let pendingEntry else {
             showingExactError = false
             statusText = L10n.text("voice.nothingToSave", language: settings.language)
@@ -122,6 +157,7 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         generation += 1
         callbackID += 1
         retryItem?.cancel()
+        settleItem?.cancel()
         speechCompletion = nil
         synthesizer.stopSpeaking(at: .immediate)
         stopEngine()
@@ -199,7 +235,9 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         }
         acceptingResults = true
         showingExactError = false
-        transcript = ""
+        // Keep transcript across Pause/Resume and across the next listen.
+        // New partials replace it; only Cancel clears it.
+        transcriptReadyForEval = false
         statusText = L10n.text("voice.listening", language: settings.language)
         capture.task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             DispatchQueue.main.async {
@@ -212,18 +250,53 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
     private func handleRecognition(result: SFSpeechRecognitionResult?, error: Error?) {
         guard acceptingResults else { return }
         if let result {
-            transcript = result.bestTranscription.formattedString
+            let text = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                transcript = result.bestTranscription.formattedString
+                transcriptReadyForEval = true
+                scheduleSettle()
+            }
             if result.isFinal {
-                acceptingResults = false
-                stopEngine()
-                interpretFinalTranscript()
+                finishUtterance(endOfTask: true)
                 return
             }
         }
         if error != nil {
-            acceptingResults = false
-            stopEngine()
-            scheduleListenAgain(after: 0.6)
+            finishUtterance(endOfTask: true)
+        }
+    }
+
+    /// Partial results often never become `isFinal` (for example "2x5"), so a short pause commits them.
+    private func scheduleSettle(force: Bool = false) {
+        settleItem?.cancel()
+        let generation = self.generation
+        let callbackID = self.callbackID
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.generation == generation, self.callbackID == callbackID, !self.exited, !self.isPaused else { return }
+            self.finishUtterance(endOfTask: force)
+        }
+        settleItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    private func finishUtterance(endOfTask: Bool) {
+        guard acceptingResults else { return }
+        let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldInterpret = transcriptReadyForEval && !spoken.isEmpty
+        if shouldInterpret && !endOfTask {
+            if case .notUnderstood = SpeechMathParser.interpret(spoken) {
+                // Still listening; an incomplete phrase like "2x" gets one more second before the error phrase.
+                scheduleSettle(force: true)
+                return
+            }
+        }
+        acceptingResults = false
+        settleItem?.cancel()
+        stopEngine()
+        if shouldInterpret {
+            interpretFinalTranscript()
+        } else {
+            scheduleListenAgain(after: 0.5)
         }
     }
 
@@ -268,16 +341,20 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         }
     }
 
-    private func presentNotUnderstood() {
+    private func presentNotUnderstood(resumeListening: Bool = true) {
         stopEngine()
         showingExactError = true
+        canSave = false
+        pendingEntry = nil
         guard let settings else { return }
+        let resume = { [weak self] in
+            guard let self, resumeListening else { return }
+            self.scheduleListenAgain(after: 3)
+        }
         if settings.assistantSpeech {
-            speak(AppPhrases.notUnderstood, languageCode: "ar-SA", kind: .exactError) { [weak self] in
-                self?.scheduleListenAgain(after: 3)
-            }
+            speak(AppPhrases.notUnderstood, languageCode: "ar-SA", kind: .exactError, then: resume)
         } else {
-            scheduleListenAgain(after: 3)
+            resume()
         }
     }
 
@@ -308,15 +385,19 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
             suppressSpeechCancel = true
             synthesizer.stopSpeaking(at: .immediate)
         }
+        SpeechAudioRouter.activateSpeakerPlayback()
         let utterance = AVSpeechUtterance(string: text)
         if kind == .exactError {
             utterance.voice = AVSpeechSynthesisVoice(language: "ar-SA") ?? AVSpeechSynthesisVoice(language: "ar")
         } else if let voice = AVSpeechSynthesisVoice(language: languageCode) {
             utterance.voice = voice
         }
-        utterance.rate = kind == .exactError ? 0.46 : AVSpeechUtteranceDefaultSpeechRate
+        let rate = settings?.speechRate ?? AppSettings.defaultSpeechRate
+        utterance.rate = SpeechAudioRouter.clampedRate(rate)
         synthesizer.speak(utterance)
-        let fallback = kind == .exactError ? 9.0 : 6.0
+        let safeRate = max(Double(utterance.rate), 0.05)
+        let estimated = Double(text.count) / (safeRate * 12.0) + 1.5
+        let fallback = max(kind == .exactError ? 9.0 : 6.0, estimated)
         DispatchQueue.main.asyncAfter(deadline: .now() + fallback) { [weak self] in
             guard let self, self.generation == generation else { return }
             self.completeSpeech(cancelled: false)

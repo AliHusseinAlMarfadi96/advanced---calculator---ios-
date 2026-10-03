@@ -23,6 +23,10 @@
 "settings.assistantSpeech.hint" = "When off, the assistant still shows text but does not speak.";
 "settings.startBeep" = "Starting beep";
 "settings.startBeep.hint" = "Plays a short tone when the assistant starts listening.";
+"settings.speakResult" = "Speak result after equals";
+"settings.speakResult.hint" = "Speaks the final result when the equals button is pressed.";
+"settings.speechRate" = "Speech speed";
+"settings.speechRate.hint" = "Sets how fast every spoken phrase is said.";
 "language.english" = "English";
 "language.arabic" = "Arabic";
 "language.english.hint" = "Switches the app language to English.";

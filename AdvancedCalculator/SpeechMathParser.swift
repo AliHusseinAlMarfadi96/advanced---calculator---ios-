@@ -306,7 +306,22 @@ enum SpeechMathParser {
                 mapped.append(character)
             }
         }
-        return mapped
+        return replaceStandaloneX(mapped)
+    }
+
+    /// Letter x between non-letters is multiplication ("2x5", "2 x 5"). Words that contain x stay intact.
+    private static func replaceStandaloneX(_ text: String) -> String {
+        var characters = Array(text)
+        for index in characters.indices {
+            guard characters[index] == "x" || characters[index] == "X" else { continue }
+            let previousIsLetter = index > characters.startIndex && characters[characters.index(before: index)].isLetter
+            let nextIndex = characters.index(after: index)
+            let nextIsLetter = nextIndex < characters.endIndex && characters[nextIndex].isLetter
+            if !previousIsLetter && !nextIsLetter {
+                characters[index] = "*"
+            }
+        }
+        return String(characters)
     }
 
     private static func tidy(_ raw: String) -> String {
