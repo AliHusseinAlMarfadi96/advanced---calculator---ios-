@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "Advanced Calculator";
+"NSMicrophoneUsageDescription" = "Advanced Calculator uses the microphone so the voice assistant can hear spoken calculations.";
+"NSSpeechRecognitionUsageDescription" = "Advanced Calculator uses on-device speech recognition to turn spoken math into calculations.";
