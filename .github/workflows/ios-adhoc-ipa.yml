@@ -1,0 +1,67 @@
+name: iOS Ad-hoc IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          if [ -d /Applications/Xcode.app ]; then
+            sudo xcode-select -s /Applications/Xcode.app
+          fi
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Archive without a development team
+        run: |
+          set -euo pipefail
+          xcodebuild archive             -project AdvancedCalculator.xcodeproj             -scheme AdvancedCalculator             -destination 'generic/platform=iOS'             -archivePath "$RUNNER_TEMP/AdvancedCalculator.xcarchive"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             EXPANDED_CODE_SIGN_IDENTITY=""             DEVELOPMENT_TEAM=""             AD_HOC_CODE_SIGNING_ALLOWED=YES
+
+      - name: Ad-hoc sign and pack IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/AdvancedCalculator.xcarchive/Products/Applications/AdvancedCalculator.app"
+          if [ ! -d "$APP" ]; then
+            APP="$(find "$RUNNER_TEMP/AdvancedCalculator.xcarchive/Products" -type d -name '*.app' | head -n 1)"
+          fi
+          test -d "$APP"
+          STAGE="$RUNNER_TEMP/ipa-root"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/Payload"
+          cp -R "$APP" "$STAGE/Payload/AdvancedCalculator.app"
+          codesign --force --deep --sign - "$STAGE/Payload/AdvancedCalculator.app"
+          codesign -dv "$STAGE/Payload/AdvancedCalculator.app"
+          rm -f AdvancedCalculator-adhoc.ipa
+          (cd "$STAGE" && zip -r -y -X "$GITHUB_WORKSPACE/AdvancedCalculator-adhoc.ipa" Payload)
+          unzip -l AdvancedCalculator-adhoc.ipa | head -n 40
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdvancedCalculator-adhoc
+          path: AdvancedCalculator-adhoc.ipa
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Write job summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## AdvancedCalculator ad-hoc IPA
+
+          This artifact is **ad-hoc signed** with codesign identity `-`. It is not an App Store build and it was not signed with a paid Apple Developer certificate.
+
+          The IPA can be installed with sideload tools such as TrollStore. Downloading the GitHub Actions artifact requires being logged into GitHub; the link is not a permanent anonymous direct download.
+          EOF
