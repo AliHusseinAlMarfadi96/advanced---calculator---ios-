@@ -21,8 +21,8 @@
 "settings.keyboardSpeech.hint" = "Speaks each keypad button in the selected language.";
 "settings.assistantSpeech" = "Voice assistant spoken output";
 "settings.assistantSpeech.hint" = "When off, the assistant still shows text but does not speak.";
-"settings.startBeep" = "Starting beep";
-"settings.startBeep.hint" = "Plays a short tone when the assistant starts listening.";
+"settings.startBeep" = "Voice assistant start alert";
+"settings.startBeep.hint" = "Plays a beep, a vibration, or both when the assistant starts listening.";
 "settings.speakResult" = "Speak result after equals";
 "settings.speakResult.hint" = "Speaks the final result when the equals button is pressed.";
 "settings.speechRate" = "Speech speed";
@@ -139,3 +139,8 @@
 "key.comma" = "Comma";
 "key.comma.hint" = "Separates the index and value in nroot, for example nroot(3, 8).";
 "speak.comma" = "comma";
+"settings.startCue.beep" = "Beep only";
+"settings.startCue.vibration" = "Vibration only";
+"settings.startCue.both" = "Beep and vibration";
+"settings.verboseMemory" = "Verbose memory in the voice assistant";
+"settings.verboseMemory.hint" = "Speaks the full equation in Arabic, including the remembered value, instead of only the result.";

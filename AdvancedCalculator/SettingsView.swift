@@ -28,9 +28,19 @@ struct SettingsView: View {
                         }
                         .accessibilityHint(L10n.text("settings.assistantSpeech.hint", language: settings.language))
 
-                        Toggle(isOn: $settings.startBeep) {
+                        Toggle(isOn: $settings.verboseMemorySpeech) {
+                            Text(L10n.text("settings.verboseMemory", language: settings.language))
+                        }
+                        .accessibilityHint(L10n.text("settings.verboseMemory.hint", language: settings.language))
+
+                        Picker(selection: $settings.startCue) {
+                            ForEach(AssistantStartCue.allCases) { cue in
+                                Text(L10n.text(cue.titleKey, language: settings.language)).tag(cue)
+                            }
+                        } label: {
                             Text(L10n.text("settings.startBeep", language: settings.language))
                         }
+                        .pickerStyle(.segmented)
                         .accessibilityHint(L10n.text("settings.startBeep.hint", language: settings.language))
 
                         Toggle(isOn: $settings.speakResultAfterEquals) {

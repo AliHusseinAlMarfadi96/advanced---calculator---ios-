@@ -21,8 +21,8 @@
 "settings.keyboardSpeech.hint" = "ينطق كل زر في لوحة المفاتيح باللغة المختارة.";
 "settings.assistantSpeech" = "النطق في المساعد الصوتي";
 "settings.assistantSpeech.hint" = "عند الإيقاف تبقى النصوص ظاهرة دون نطق.";
-"settings.startBeep" = "صوت البداية";
-"settings.startBeep.hint" = "يشغّل نغمة قصيرة عندما يبدأ المساعد الاستماع.";
+"settings.startBeep" = "تنبيه بدء المساعد الصوتي";
+"settings.startBeep.hint" = "يشغّل صوتًا أو اهتزازًا أو كليهما عندما يبدأ المساعد الاستماع.";
 "settings.speakResult" = "نطق الصوت بعد كلمة يساوي";
 "settings.speakResult.hint" = "ينطق الناتج النهائي عند الضغط على يساوي.";
 "settings.speechRate" = "سرعة النطق";
@@ -139,3 +139,8 @@
 "key.comma" = "فاصلة";
 "key.comma.hint" = "تفصل بين الأساس والقيمة في الجذر النوني، مثل nroot(3, 8).";
 "speak.comma" = "فاصلة";
+"settings.startCue.beep" = "صوت فقط";
+"settings.startCue.vibration" = "اهتزاز فقط";
+"settings.startCue.both" = "صوت واهتزاز";
+"settings.verboseMemory" = "صياغة الذاكرة في المساعد الصوتي";
+"settings.verboseMemory.hint" = "ينطق المعادلة كاملة بالعربية مع القيمة المحفوظة بدل الناتج فقط.";

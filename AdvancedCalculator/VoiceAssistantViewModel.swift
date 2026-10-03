@@ -2,6 +2,7 @@ import AVFoundation
 import Combine
 import Foundation
 import Speech
+import UIKit
 
 final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var statusText = ""
@@ -30,6 +31,15 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
     private var speechKind: SpeechKind = .none
     /// False until this listening session receives new text, so Pause/Resume does not re-evaluate the kept transcript.
     private var transcriptReadyForEval = false
+    /// Last successful assistant result. Prefixed onto a leading-operator phrase.
+    private var runningTotal: Double = 0
+    /// Value of `runningTotal` when the current listening turn started, so Save does not apply the phrase twice.
+    private var continuationBase: Double = 0
+    /// Transcript already turned into `pendingEntry`, compared so Save does not continue from the updated total.
+    private var evaluatedTranscript: String?
+    private var didRequestClose = false
+    var onRequestClose: (() -> Void)?
+    private static let runningTotalKey = "advancedCalculator.voiceRunningTotal"
 
     private enum SpeechKind {
         case none
@@ -47,6 +57,7 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         self.history = history
         guard !started else { return }
         started = true
+        loadRunningTotal()
         statusText = L10n.text("voice.listening", language: settings.language)
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
@@ -79,6 +90,7 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         synthesizer.stopSpeaking(at: .immediate)
         stopEngine()
         transcriptReadyForEval = false
+        evaluatedTranscript = nil
         transcript = ""
         expressionText = ""
         resultText = ""
@@ -114,17 +126,16 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
     func saveTapped() {
         guard let settings else { return }
         let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if handleCommandIfPresent(spoken) {
+            return
+        }
         let visibleExpression = expressionText.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = !spoken.isEmpty ? spoken : visibleExpression
-        if !text.isEmpty {
-            switch SpeechMathParser.interpret(text) {
+        let alreadyEvaluated = pendingEntry != nil && !spoken.isEmpty && spoken == evaluatedTranscript
+        if !text.isEmpty && !alreadyEvaluated {
+            switch SpeechMathParser.interpret(text, continuingFrom: continuationBase) {
             case let .success(expression, value):
-                let formatted = ExpressionEvaluator.format(value)
-                expressionText = expression
-                resultText = formatted
-                canSave = true
-                pendingEntry = HistoryEntry(id: UUID(), expression: expression, result: formatted, createdAt: Date())
-                showingExactError = false
+                commitSuccess(expression: expression, value: value, spoken: spoken)
             case .notUnderstood:
                 canSave = false
                 pendingEntry = nil
@@ -184,7 +195,11 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
             guard let self, self.generation == generation, !self.exited, !self.isPaused else { return }
             self.startRecognition()
         }
-        if settings.startBeep {
+        let cue = settings.startCue
+        if cue.playsVibration {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+        if cue.playsBeep {
             beep.play()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.28, execute: fire)
         } else {
@@ -195,6 +210,7 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
     private func startRecognition() {
         guard let settings, !exited, !isPaused else { return }
         beep.stop()
+        continuationBase = runningTotal
         callbackID += 1
         let callbackID = self.callbackID
         stopEngine()
@@ -212,7 +228,7 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         capture.request = request
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .duckOthers])
+            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .mixWithOthers])
             try session.setActive(true, options: [.notifyOthersOnDeactivation])
             let input = capture.engine.inputNode
             let format = input.outputFormat(forBus: 0)
@@ -253,6 +269,9 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
             let text = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
                 transcript = result.bestTranscription.formattedString
+                if handleCommandIfPresent(transcript) {
+                    return
+                }
                 transcriptReadyForEval = true
                 scheduleSettle()
             }
@@ -282,9 +301,14 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
     private func finishUtterance(endOfTask: Bool) {
         guard acceptingResults else { return }
         let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Only a transcript produced by this listening turn. The previous command is kept on screen
+        // and must not be cleared or spoken again when the next session errors before any new words.
+        if transcriptReadyForEval, handleCommandIfPresent(spoken) {
+            return
+        }
         let shouldInterpret = transcriptReadyForEval && !spoken.isEmpty
         if shouldInterpret && !endOfTask {
-            if case .notUnderstood = SpeechMathParser.interpret(spoken) {
+            if case .notUnderstood = SpeechMathParser.interpret(spoken, continuingFrom: continuationBase) {
                 // Still listening; an incomplete phrase like "2x" gets one more second before the error phrase.
                 scheduleSettle(force: true)
                 return
@@ -307,19 +331,26 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
             scheduleListenAgain(after: 0.4)
             return
         }
-        switch SpeechMathParser.interpret(spoken) {
+        if handleCommandIfPresent(spoken) {
+            return
+        }
+        switch SpeechMathParser.interpret(spoken, continuingFrom: continuationBase) {
         case let .success(expression, value):
+            commitSuccess(expression: expression, value: value, spoken: spoken)
             let formatted = ExpressionEvaluator.format(value)
-            expressionText = expression
-            resultText = formatted
-            canSave = true
-            pendingEntry = HistoryEntry(id: UUID(), expression: expression, result: formatted, createdAt: Date())
-            showingExactError = false
-            let sentence = L10n.text("voice.resultSpoken", language: settings.language)
-                .replacingOccurrences(of: "%@", with: formatted)
+            let sentence: String
+            let languageCode: String
+            if settings.verboseMemorySpeech {
+                sentence = ArabicEquationSpeech.sentence(expression: expression, result: value)
+                languageCode = "ar-SA"
+            } else {
+                sentence = L10n.text("voice.resultSpoken", language: settings.language)
+                    .replacingOccurrences(of: "%@", with: formatted)
+                languageCode = settings.language.speechLocale
+            }
             statusText = sentence
             if settings.assistantSpeech {
-                speak(sentence, languageCode: settings.language.speechLocale, kind: .other) { [weak self] in
+                speak(sentence, languageCode: languageCode, kind: .other) { [weak self] in
                     self?.scheduleListenAgain(after: 0.4)
                 }
             } else {
@@ -416,6 +447,75 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         completion()
     }
 
+    private func loadRunningTotal() {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Self.runningTotalKey) != nil {
+            runningTotal = defaults.double(forKey: Self.runningTotalKey)
+        } else {
+            runningTotal = 0
+        }
+        continuationBase = runningTotal
+        let formatted = ExpressionEvaluator.format(runningTotal)
+        if formatted != "0" {
+            resultText = formatted
+        }
+    }
+
+    private func commitSuccess(expression: String, value: Double, spoken: String) {
+        let formatted = ExpressionEvaluator.format(value)
+        expressionText = expression
+        resultText = formatted
+        canSave = true
+        pendingEntry = HistoryEntry(id: UUID(), expression: expression, result: formatted, createdAt: Date())
+        if !spoken.isEmpty {
+            evaluatedTranscript = spoken
+        }
+        runningTotal = value
+        UserDefaults.standard.set(value, forKey: Self.runningTotalKey)
+        showingExactError = false
+    }
+
+    /// حذف / تصفير clear the running total. إيقاف / خروج close the assistant the same way as Exit.
+    private func handleCommandIfPresent(_ spoken: String) -> Bool {
+        guard let command = AssistantVoiceCommand.recognize(spoken) else { return false }
+        callbackID += 1
+        acceptingResults = false
+        settleItem?.cancel()
+        retryItem?.cancel()
+        stopEngine()
+        switch command {
+        case .clearMemory:
+            clearRunningTotalAndSpeak()
+        case .close:
+            guard !didRequestClose else { return true }
+            didRequestClose = true
+            shutdown()
+            onRequestClose?()
+        }
+        return true
+    }
+
+    private func clearRunningTotalAndSpeak() {
+        runningTotal = 0
+        continuationBase = 0
+        UserDefaults.standard.set(0.0, forKey: Self.runningTotalKey)
+        expressionText = ""
+        resultText = "0"
+        canSave = false
+        pendingEntry = nil
+        evaluatedTranscript = nil
+        showingExactError = false
+        guard let settings else { return }
+        statusText = AppPhrases.memoryCleared
+        if settings.assistantSpeech {
+            speak(AppPhrases.memoryCleared, languageCode: "ar-SA", kind: .other) { [weak self] in
+                self?.scheduleListenAgain(after: 0.4)
+            }
+        } else {
+            scheduleListenAgain(after: 0.8)
+        }
+    }
+
     private func stopEngine() {
         acceptingResults = false
         if capture.tapInstalled {
@@ -429,6 +529,22 @@ final class VoiceAssistantViewModel: NSObject, ObservableObject, AVSpeechSynthes
         capture.task?.cancel()
         capture.request = nil
         capture.task = nil
+    }
+}
+
+private enum AssistantVoiceCommand {
+    case clearMemory
+    case close
+
+    static func recognize(_ spoken: String) -> AssistantVoiceCommand? {
+        switch SpeechMathParser.commandKey(spoken) {
+        case "حذف", "تصفير":
+            return .clearMemory
+        case "ايقاف", "خروج":
+            return .close
+        default:
+            return nil
+        }
     }
 }
 

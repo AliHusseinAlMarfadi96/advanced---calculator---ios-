@@ -1,27 +1,18 @@
 import AVFoundation
 import Combine
 
-/// Playback route used before every spoken utterance so audio leaves the loud speaker.
+/// Playback route used before every spoken utterance so audio leaves the loud speaker
+/// without ducking VoiceOver. `.mixWithOthers` is required; do not use `.duckOthers`.
 enum SpeechAudioRouter {
-    /// Category `.playback` with `.defaultToSpeaker` (`.duckOthers` kept).
     /// Called at launch and again before each utterance because recognition switches
-    /// the session to `.playAndRecord` / `.measurement`, which routes speech to the earpiece.
+    /// the session to `.playAndRecord`, which would otherwise route speech to the earpiece.
     static func activateSpeakerPlayback() {
-        let session = AVAudioSession.sharedInstance()
-        let attempts: [AVAudioSession.CategoryOptions] = [
-            [.defaultToSpeaker, .duckOthers],
-            [.defaultToSpeaker],
-            [.duckOthers],
-            []
-        ]
-        for options in attempts {
-            do {
-                try session.setCategory(.playback, mode: .default, options: options)
-                try session.setActive(true)
-                return
-            } catch {
-                continue
-            }
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.playback, options: [.defaultToSpeaker, .mixWithOthers])
+            try audioSession.setActive(true)
+        } catch {
+            print("Failed to set audio session category.")
         }
     }
 

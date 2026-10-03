@@ -4,4 +4,5 @@ import Foundation
 enum AppPhrases {
     static let credits = "تم تطوير هذا التطبيق بواسطة علي حسين المرفدي"
     static let notUnderstood = "لم أفهم شيء، ستتم إعادة المحاولة بعد عدة ثواني"
+    static let memoryCleared = "تم حذف الذاكرة"
 }

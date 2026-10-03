@@ -7,7 +7,10 @@ enum SpeechInterpretation: Equatable {
 }
 
 enum SpeechMathParser {
-    static func interpret(_ spoken: String) -> SpeechInterpretation {
+    /// `memory`, when set, is prefixed onto a leading-operator phrase (`+ 5`, `ناقص خمسة`, `x5`)
+    /// so the phrase continues the running total. A full expression such as `2x5` does not start
+    /// with an operator after normalization and replaces that total instead.
+    static func interpret(_ spoken: String, continuingFrom memory: Double? = nil) -> SpeechInterpretation {
         let normalized = normalize(spoken)
         guard !normalized.trimmingCharacters(in: .whitespaces).isEmpty else {
             return .notUnderstood
@@ -49,10 +52,18 @@ enum SpeechMathParser {
             return .notUnderstood
         }
         let expression = tidy(output)
-        guard hasMathValue(expression) else { return .notUnderstood }
+        let solvable: String
+        if isContinuation(expression) {
+            // "+5" / "*5" / "-5" keep going from the remembered total. "*" alone is not math.
+            guard hasMathValue(expression) else { return .notUnderstood }
+            solvable = ExpressionEvaluator.format(memory ?? 0) + expression
+        } else {
+            guard hasMathValue(expression) else { return .notUnderstood }
+            solvable = expression
+        }
         do {
-            let value = try ExpressionEvaluator.evaluate(expression)
-            return .success(expression: expression, result: value)
+            let value = try ExpressionEvaluator.evaluate(solvable)
+            return .success(expression: solvable, result: value)
         } catch let failure as EvalFailure {
             switch failure {
             case .syntax:
@@ -350,5 +361,210 @@ enum SpeechMathParser {
 
     private static func containsArabic(_ text: String) -> Bool {
         text.unicodeScalars.contains { (0x0600...0x06FF).contains(Int($0.value)) }
+    }
+
+    /// Continuation when the normalized expression starts with + - * or /.
+    /// `2*5` starts with a digit, so it is a standalone expression.
+    /// Leading `+` and `-` are included even though the evaluator would treat them as unary.
+    private static func isContinuation(_ expression: String) -> Bool {
+        guard let first = expression.first else { return false }
+        return "+-*/".contains(first)
+    }
+
+    /// Whole utterance as a voice command: trimmed, diacritics folded, punctuation ignored.
+    static func commandKey(_ spoken: String) -> String {
+        let normalized = normalize(spoken)
+        var cleaned = ""
+        for character in normalized {
+            if character.isPunctuation || character.isSymbol {
+                cleaned.append(" ")
+            } else {
+                cleaned.append(character)
+            }
+        }
+        return cleaned.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+}
+
+/// Arabic equation speech for the voice assistant ("عشرة زائد خمسة يساوي خمسة عشر").
+enum ArabicEquationSpeech {
+    static func sentence(expression: String, result: Double) -> String {
+        let spokenExpression = verbalize(expression)
+        let spokenResult = spell(result)
+        if spokenExpression.isEmpty {
+            return spokenResult
+        }
+        return spokenExpression + " يساوي " + spokenResult
+    }
+
+    static func spell(_ value: Double) -> String {
+        spellLiteral(ExpressionEvaluator.format(value))
+    }
+
+    /// Integers from -999 through 999 become words. Everything else is spoken as digits.
+    static func spellLiteral(_ literal: String) -> String {
+        let negative = literal.hasPrefix("-")
+        let body = negative ? String(literal.dropFirst()) : literal
+        if let number = Int(body), body == String(number), number <= 999 {
+            return spellInteger(negative ? -number : number)
+        }
+        return literal
+    }
+
+    private static let ones = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة"]
+    private static let teens = ["عشرة", "أحد عشر", "اثنا عشر", "ثلاثة عشر", "أربعة عشر", "خمسة عشر", "ستة عشر", "سبعة عشر", "ثمانية عشر", "تسعة عشر"]
+    private static let tens = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"]
+    private static let hundreds = ["", "مئة", "مئتان", "ثلاثمئة", "أربعمئة", "خمسمئة", "ستمئة", "سبعمئة", "ثمانمئة", "تسعمئة"]
+
+    private static func spellInteger(_ number: Int) -> String {
+        if number < 0 {
+            return "سالب " + spellInteger(-number)
+        }
+        if number == 0 { return "صفر" }
+        if number < 10 { return ones[number] }
+        if number < 20 { return teens[number - 10] }
+        if number < 100 {
+            let unit = number % 10
+            let ten = number / 10
+            if unit == 0 { return tens[ten] }
+            return ones[unit] + " و" + tens[ten]
+        }
+        let hundred = number / 100
+        let remainder = number % 100
+        if remainder == 0 { return hundreds[hundred] }
+        return hundreds[hundred] + " و" + spellInteger(remainder)
+    }
+
+    private static func verbalize(_ expression: String) -> String {
+        let chars = Array(expression)
+        var index = 0
+        var parts: [String] = []
+        var expectingOperand = true
+
+        func skipSpaces() {
+            while index < chars.count, chars[index].isWhitespace {
+                index += 1
+            }
+        }
+
+        func readNumber() -> String {
+            var token = ""
+            var sawDot = false
+            while index < chars.count {
+                let character = chars[index]
+                if character.isNumber {
+                    token.append(character)
+                    index += 1
+                } else if character == ".", !sawDot {
+                    sawDot = true
+                    token.append(character)
+                    index += 1
+                } else {
+                    break
+                }
+            }
+            return token
+        }
+
+        func readWord() -> String {
+            var token = ""
+            while index < chars.count, chars[index].isLetter {
+                token.append(chars[index])
+                index += 1
+            }
+            return token
+        }
+
+        while index < chars.count {
+            skipSpaces()
+            if index >= chars.count { break }
+            let character = chars[index]
+
+            if character == "-", expectingOperand {
+                var look = index + 1
+                while look < chars.count, chars[look].isWhitespace { look += 1 }
+                if look < chars.count, chars[look].isNumber || chars[look] == "." {
+                    index += 1
+                    skipSpaces()
+                    let token = readNumber()
+                    if !token.isEmpty {
+                        parts.append(spellLiteral("-" + token))
+                        expectingOperand = false
+                    }
+                    continue
+                }
+            }
+
+            if "+-*/^".contains(character) {
+                parts.append(operatorWord(character))
+                expectingOperand = true
+                index += 1
+                continue
+            }
+            if character == "(" {
+                parts.append("قوس مفتوح")
+                expectingOperand = true
+                index += 1
+                continue
+            }
+            if character == ")" {
+                parts.append("قوس مغلق")
+                expectingOperand = false
+                index += 1
+                continue
+            }
+            if character == "," {
+                parts.append("فاصلة")
+                expectingOperand = true
+                index += 1
+                continue
+            }
+            if character.isNumber || character == "." {
+                let token = readNumber()
+                if !token.isEmpty {
+                    parts.append(spellLiteral(token))
+                    expectingOperand = false
+                }
+                continue
+            }
+            if character.isLetter {
+                let word = readWord()
+                if !word.isEmpty {
+                    parts.append(functionWord(word))
+                    expectingOperand = false
+                }
+                continue
+            }
+            index += 1
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private static func operatorWord(_ character: Character) -> String {
+        switch character {
+        case "+": return "زائد"
+        case "-": return "ناقص"
+        case "*": return "ضرب"
+        case "/": return "قسمة"
+        case "^": return "أس"
+        default: return String(character)
+        }
+    }
+
+    private static func functionWord(_ word: String) -> String {
+        switch word {
+        case "sin": return "جيب"
+        case "cos": return "جيب التمام"
+        case "tan": return "ظل"
+        case "ln": return "لوغاريتم طبيعي"
+        case "log": return "لوغاريتم"
+        case "sqrt": return "جذر"
+        case "cbrt": return "جذر تكعيبي"
+        case "square": return "تربيع"
+        case "nroot": return "جذر نوني"
+        case "pi": return "باي"
+        case "e": return "إي"
+        default: return word
+        }
     }
 }

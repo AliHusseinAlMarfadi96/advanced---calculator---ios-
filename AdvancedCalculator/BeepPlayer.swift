@@ -28,7 +28,7 @@ final class BeepPlayer {
             channel[index] = Float(sin(2 * Double.pi * frequency * time) * 0.9 * window)
         }
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .duckOthers])
+        try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers])
         try? session.setActive(true, options: [])
         if !engine.isRunning {
             try? engine.start()

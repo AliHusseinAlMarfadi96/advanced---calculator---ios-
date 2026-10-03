@@ -96,7 +96,10 @@ struct VoiceAssistantView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(red: 0.05, green: 0.055, blue: 0.07).ignoresSafeArea())
         .foregroundStyle(.white)
-        .onAppear { model.start(settings: settings, history: history) }
+        .onAppear {
+            model.onRequestClose = { dismiss() }
+            model.start(settings: settings, history: history)
+        }
         .onDisappear { model.shutdown() }
     }
 
