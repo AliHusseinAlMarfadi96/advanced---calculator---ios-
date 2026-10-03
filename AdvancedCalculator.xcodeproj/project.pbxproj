@@ -64,9 +64,9 @@
 			name = InfoPlist.strings;
 			sourceTree = "<group>";
 		};
-		AC00000000000000000000D2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AC0000000000000000000008 /* Assets.xcassets */; };
-		AC00000000000000000000D3 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AC000000000000000000001E /* Localizable.strings */; };
-		AC00000000000000000000D4 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AC000000000000000000001F /* InfoPlist.strings */; };
+		AC00000000000000000000E2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AC0000000000000000000008 /* Assets.xcassets */; };
+		AC00000000000000000000E3 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AC000000000000000000001E /* Localizable.strings */; };
+		AC00000000000000000000E4 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AC000000000000000000001F /* InfoPlist.strings */; };
 		AC000000000000000000000B /* AdvancedCalculator */ = {
 			isa = PBXGroup;
 			children = (
@@ -139,9 +139,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AC00000000000000000000D2 /* Assets.xcassets in Resources */,
-				AC00000000000000000000D3 /* Localizable.strings in Resources */,
-				AC00000000000000000000D4 /* InfoPlist.strings in Resources */,
+				AC00000000000000000000E2 /* Assets.xcassets in Resources */,
+				AC00000000000000000000E3 /* Localizable.strings in Resources */,
+				AC00000000000000000000E4 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
