@@ -1,0 +1,14 @@
+.DS_Store
+*.swp
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM
+*.xcarchive
+timeline.xctimeline
+playground.xcworkspace
